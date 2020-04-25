@@ -1,0 +1,16 @@
+
+loss: mse
+optimizer: adamax
+residual: false
+lr: 0.0001
+batch-size: 1
+epochs: 50
+noise: false
+
+
+further
+epochs: 50
+lr: 0.00008
+batch-size: 1
+
+total-epochs: 100
