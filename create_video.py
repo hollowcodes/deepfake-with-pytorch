@@ -6,7 +6,10 @@ import time
 import os
 import matplotlib.pyplot as plt
 
-from residual_model import Model
+from pytorch_models.smaller_model import Model
+#from pytorch_models.residual_model128 import Model
+#from pytorch_models.residual_model256 import Model
+
 import torch
 import torch.utils.data
 import torch.nn as nn
@@ -14,19 +17,22 @@ from torchvision import transforms
 
 
 haarcascade = cv2.CascadeClassifier("haarcascades/haarcascade_frontalface_default.xml")
-target_video = "datasets/videos/target_video.mp4"
-source_video = "datasets/videos/micheal_scott/source_video.mp4"
 
 
-def create_video(class_: str="0", video_file: str="", face_dim=(256, 256)):
+def create_video(class_: str="0", video_file: str="", decoder: str="", face_dim=(256, 256), model_path: str=""):
     model = Model().cuda()
-    model.load_state_dict(torch.load("models/five/five_model.pt"))
+    model.load_state_dict(torch.load(model_path))
 
     count = 0
     cap = cv2.VideoCapture(video_file)
     while cap.isOpened():
         _, frame = cap.read()
         image = frame
+
+        if class_ == "0":
+            pass
+        elif class_ == "1":
+            image = cv2.resize(image, (874, 437))
 
         try:
             # finds face
@@ -44,11 +50,11 @@ def create_video(class_: str="0", video_file: str="", face_dim=(256, 256)):
             
             # corrections for source images
             if class_ == "1":
-                x += 45
-                y += 80
+                x += 30
+                y += 50
 
-                w -= 65
-                h -= 65
+                w -= 45
+                h -= 45
 
             # warmer image temperature of the source image because of skin tone differences
             if class_ == "0":
@@ -59,29 +65,25 @@ def create_video(class_: str="0", video_file: str="", face_dim=(256, 256)):
             
             # crop out face, resize it, normalize it to [0; 1], convert to tensor
             face = image[y:(y + h), x:(x + w)]
-            face = cv2.resize(face, face_dim)
-            face = np.array(face) / 255
-            face = torch.Tensor(face).cuda().reshape(1, 3, 128, 128)
+            face_ = cv2.resize(face, face_dim)
 
-            # reproduce image with autoencoder
-            reproduced = model.eval()(face, label=class_)[0]
+            # run face through encoder and given decoder
+            pil_reproduced_ = model_reproduction(model, face_, decoder=decoder)
+            pil_reproduced = pil_reproduced_.resize((w, h))
 
-            # detach from pytorch-graph, resize it to original shape
-            reproduced = reproduced.cpu().detach().numpy().reshape(128, 128, 3) * 255
-            pil_reproduced = Image.fromarray(reproduced.astype("uint8"))
-            pil_reproduced = pil_reproduced.resize((w, h))
-
-            # convert it to BGR for OpenCV
-            b, g, r = pil_reproduced.split()
-            pil_reproduced = Image.merge("RGB", (r, g, b))
+            # convert it to RGB for OpenCV
+            pil_reproduced = pil_bgr2rgb(pil_reproduced)
 
             # pate the reproduced face on the video frame
             image = Image.fromarray(np.array(image))
             image.paste(pil_reproduced, (x, y))
+
+            image.paste(Image.fromarray(face_), (10, 10))
+            image.paste(pil_bgr2rgb(pil_reproduced_), (148, 10))
             image = np.array(image)
 
-        except:
-            pass
+        except Exception as e:
+            print(e)
 
         cv2.imshow("img", image)
         cv2.waitKey(1)
@@ -91,6 +93,29 @@ def create_video(class_: str="0", video_file: str="", face_dim=(256, 256)):
     
     cap.release()
     cv2.destroyAllWindows()
+
+
+# get model reproduction
+def model_reproduction(model, face, decoder: str=""):
+    face = np.array(face) / 255
+    face = torch.Tensor(face).cuda().reshape(1, 3, 128, 128)
+
+    # reproduce image with autoencoder
+    reproduced = model.eval()(face, label=decoder, mode="test")[0]
+
+    # detach from pytorch-graph, resize it to original shape
+    reproduced = reproduced.cpu().detach().numpy().reshape(128, 128, 3) * 255
+    pil_reproduced = Image.fromarray(reproduced.astype("uint8"))
+
+    return pil_reproduced
+
+
+# convert BGR to RGB
+def pil_bgr2rgb(pil_image):
+    b, g, r = pil_image.split()
+    pil_image = Image.merge("RGB", (r, g, b))
+
+    return pil_image
 
 
 # change image brightness
@@ -150,7 +175,13 @@ if __name__ == "__main__":
     target_label = 0
     source_label = 1
 
-    print("extracting faces from target video.")
-    create_video(class_="0", video_file=target_video, face_dim=(128, 128))
-    print("extracting faces from source video.")
-    #create_video(class_="1", video_file=source_video, face_dim=(128, 128))
+    target_video = "datasets/videos/target_video1.mp4"
+    source_video = "datasets/videos/micheal_scott/source_video1.mp4"
+
+    model_path4 = "models/four/four_model.pt"
+    model_path3 = "models/three/three_model.pt"
+    model_path6 = "models/six/six_model.pt"
+    model_path7 = "models/seven/seven_model.pt"
+
+    create_video(class_="1", video_file=source_video, decoder="0", face_dim=(128, 128), model_path=model_path6)
+    #create_video(class_="0", video_file=target_video, decoder="1", face_dim=(128, 128), model_path=model_path6)
